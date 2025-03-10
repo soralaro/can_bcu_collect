@@ -1,4 +1,5 @@
 #ifndef PROJECT_COLLECT_BCU_DATA_H
+#define PROJECT_COLLECT_BCU_DATA_H
 #include<cstdint>
 #define START 1
 #define STOP 0

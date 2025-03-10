@@ -16,13 +16,9 @@
 #include <vector>
 #include <mutex>
 #include <condition_variable>
-#include <fstream>
-#include <sstream>
-#include <iomanip>
-#include <sys/stat.h> // 用于mkdir和stat
-#include <cstring>    // 用于strerror
-#include <cerrno>     // 用于errno
+#include <memory>
 #include "collect_bcu_data.h"
+#include "file_manage.h"
 
 
 // 全局标志，用于指示程序是否应该退出
@@ -60,77 +56,8 @@ void set_collect(int sock,bool flag){
 std::queue<std::vector<uint8_t>> dataQueue; // 数据队列
 std::mutex queueMutex;                     // 队列互斥锁
 std::condition_variable queueCondVar;      // 条件变量
-// 检查文件夹是否存在，如果不存在则创建
-bool createDirectoryIfNotExists(const std::string& path) {
-    struct stat info;
 
-    // 检查路径是否存在
-    if (stat(path.c_str(), &info) != 0) {
-        // 路径不存在，尝试创建文件夹
-        if (mkdir(path.c_str(), 0755) != 0) {
-            // 创建文件夹失败
-            std::cerr << "Error creating directory: " << strerror(errno) << std::endl;
-            return false;
-        }
-        std::cout << "Directory created: " << path << std::endl;
-        return true;
-    } else if (info.st_mode & S_IFDIR) {
-        // 路径存在且是一个文件夹
-        std::cout << "Directory already exists: " << path << std::endl;
-        return true;
-    } else {
-        // 路径存在但不是文件夹
-        std::cerr << "Path exists but is not a directory: " << path << std::endl;
-        return false;
-    }
-}
-// 写文件的线程函数
-void fileWriteThread() {
 
-    std::string folderPath = "bcu_data";
-
-    if (createDirectoryIfNotExists(folderPath)) {
-        std::cout << "Directory is ready: " << folderPath << std::endl;
-    } else {
-        std::cerr << "Failed to ensure directory exists: " << folderPath << std::endl;
-    }
-    auto now = std::chrono::system_clock::now();
-
-    // 将时间点转换为time_t（秒级精度）
-    std::time_t now_time_t = std::chrono::system_clock::to_time_t(now);
-
-    // 将time_t转换为tm结构（本地时间）
-    std::tm now_tm = *std::localtime(&now_time_t);
-
-    // 使用stringstream格式化时间
-    std::stringstream ss;
-    ss << std::put_time(&now_tm, "%Y-%m-%d_%H:%M:%S");
-    std::string filename=folderPath+"/bcu_data_";
-    filename+=ss.str()+".bin";
-    std::ofstream outFile(filename, std::ios::binary);
-    if (!outFile) {
-        std::cerr << "Error opening file." << std::endl;
-        return;
-    }
-
-    while (!shouldExit) {
-        std::unique_lock<std::mutex> lock(queueMutex);
-
-        // 等待队列中有数据
-        queueCondVar.wait(lock, [] { return !dataQueue.empty() || shouldExit; });
-
-        // 将队列中的数据写入文件
-        while (!dataQueue.empty()) {
-            auto data = dataQueue.front();
-            outFile.write(reinterpret_cast<char*>(data.data()), data.size());
-            dataQueue.pop();
-        }
-
-        lock.unlock();
-    }
-
-    outFile.close();
-}
 int main() {
     int s;
     struct sockaddr_can addr;
@@ -150,10 +77,10 @@ int main() {
         return 1;
     }
     set_collect(s,START);
+    std::shared_ptr<FileManage> ptrFileManage=std::make_shared<FileManage>(dataQueue,queueMutex,queueCondVar,shouldExit);
+    ptrFileManage->start();
      // 启动输入监听线程
     std::thread listenerThread(inputListener);
-    // 启动文件写入线程
-    std::thread fileThread(fileWriteThread);
     u_int16_t packet_len=0;
     u_int16_t rcv_len=0;
     std::vector<uint8_t> packet;
@@ -199,6 +126,5 @@ int main() {
     // 等待输入监听线程结束
     queueCondVar.notify_all();
     listenerThread.join();
-    fileThread.join();
     return 0;
 }
