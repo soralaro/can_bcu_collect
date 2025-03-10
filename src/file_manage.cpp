@@ -7,6 +7,7 @@
 #include <cerrno>     // 用于errno
 #include <iostream>
 #include "check_del_file.h"
+#include <glog/logging.h>
 FileManage::FileManage(std::queue<std::vector<uint8_t>>& dataQueue,std::mutex& queueMutex,std::condition_variable& queueCondVar,
     std::atomic<bool>& shouldExit):dataQueue_(dataQueue),queueMutex_(queueMutex),queueCondVar_(queueCondVar),
     shouldExit_(shouldExit){
@@ -25,18 +26,18 @@ bool FileManage::createDirectoryIfNotExists(const std::string& path){
         // 路径不存在，尝试创建文件夹
         if (mkdir(path.c_str(), 0755) != 0) {
             // 创建文件夹失败
-            std::cerr << "Error creating directory: " << strerror(errno) << std::endl;
+            LOG(ERROR) << "Error creating directory: " << strerror(errno) ;
             return false;
         }
-        std::cout << "Directory created: " << path << std::endl;
+        LOG(ERROR)<< "Directory created: " << path ;
         return true;
     } else if (info.st_mode & S_IFDIR) {
         // 路径存在且是一个文件夹
-        std::cout << "Directory already exists: " << path << std::endl;
+        LOG(ERROR) << "Directory already exists: " << path;
         return true;
     } else {
         // 路径存在但不是文件夹
-        std::cerr << "Path exists but is not a directory: " << path << std::endl;
+        LOG(ERROR) << "Path exists but is not a directory: " << path ;
         return false;
     }
 }
@@ -44,9 +45,9 @@ std::ofstream  FileManage::creatNewFile(){
     std::string folderPath = "bcu_data";
 
     if (createDirectoryIfNotExists(folderPath)) {
-        std::cout << "Directory is ready: " << folderPath << std::endl;
+        LOG(ERROR) << "Directory is ready: " << folderPath ;
     } else {
-        std::cerr << "Failed to ensure directory exists: " << folderPath << std::endl;
+        LOG(ERROR) << "Failed to ensure directory exists: " << folderPath ;
     }
     auto now = std::chrono::system_clock::now();
 
@@ -63,14 +64,14 @@ std::ofstream  FileManage::creatNewFile(){
     filename+=ss.str()+".bin";
     std::ofstream outFile(filename, std::ios::binary);
     if (!outFile) {
-        std::cerr << "Error opening file." << std::endl;
+        LOG(ERROR)<< "Error opening file.";
     }
     return outFile; 
 }
 void FileManage::fileWriteThread(FileManage *manage){
     auto outFile=manage->creatNewFile(); 
     if(!outFile){
-        std::cerr << "Error  fileWriteThread opening file." << std::endl;
+        LOG(ERROR) << "Error  fileWriteThread opening file.";
     }
     CheckDelFile checkDelFile(manage->getMaxFileNum());
     while (!manage->shouldExit_) {
@@ -92,7 +93,7 @@ void FileManage::fileWriteThread(FileManage *manage){
             manage->file_size_=0;
             outFile=manage->creatNewFile();
             if(!outFile){
-                std::cerr << "Error  fileWriteThread opening file." << std::endl;
+                LOG(ERROR) << "Error  fileWriteThread opening file.";
                 return;
             }
             checkDelFile.process();

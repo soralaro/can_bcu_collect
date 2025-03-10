@@ -6,6 +6,7 @@
 #include <chrono>
 #include <string>
 #include <algorithm>
+#include <glog/logging.h>
 #include "check_del_file.h"
 namespace fs = std::filesystem;
 CheckDelFile::CheckDelFile(uint32_t maxFileNum):max_File_num_(maxFileNum){}
@@ -15,17 +16,20 @@ std::chrono::system_clock::time_point CheckDelFile::extractTimeFromFilename(cons
    // 查找时间部分的起始位置
    size_t firstUnderscore = filename.find("_");
    if (firstUnderscore == std::string::npos) {
+       LOG(ERROR)<<"Filename must like that bcu_data_2025-03-10_20:10:43.bin";
        throw std::invalid_argument("Filename does not contain a valid prefix.");
    }
 
    size_t secondUnderscore = filename.find("_", firstUnderscore + 1);
    if (secondUnderscore == std::string::npos) {
+       LOG(ERROR)<<"Filename must like that bcu_data_2025-03-10_20:10:43.bin";
        throw std::invalid_argument("Filename does not contain a valid timestamp.");
    }
 
    // 提取时间部分（假设格式为 YYYY-MM-DD_HH:MM:SS）
    std::string timePart = filename.substr(secondUnderscore + 1, 19);
    if (timePart.length() != 19) {
+       LOG(ERROR)<<"Filename must like that bcu_data_2025-03-10_20:10:43.bin";
        throw std::invalid_argument("Timestamp format is invalid.");
    }
 
@@ -34,6 +38,7 @@ std::chrono::system_clock::time_point CheckDelFile::extractTimeFromFilename(cons
    std::istringstream ss(timePart);
    ss >> std::get_time(&tm, "%Y-%m-%d_%H:%M:%S");
    if (ss.fail()) {
+       LOG(ERROR)<<"Filename must like that bcu_data_2025-03-10_20:10:43.bin";
        throw std::invalid_argument("Failed to parse timestamp.");
    }
 
@@ -46,7 +51,7 @@ void CheckDelFile::process() {
     fs::path dirPath(directory);
 
     if (!fs::exists(dirPath) || !fs::is_directory(dirPath)) {
-        std::cerr << "Directory does not exist." << std::endl;
+        LOG(ERROR) << "Directory does not exist." ;
         return ;
     }
 
@@ -64,14 +69,12 @@ void CheckDelFile::process() {
             return extractTimeFromFilename(a.filename().string()) < extractTimeFromFilename(b.filename().string());
         });
 
-        std::cout << "Deleting file: " << earliestFile << std::endl;
+        LOG(ERROR) << "Deleting file: " << earliestFile ;
         // 删除时间最早的文件
         if (fs::remove(earliestFile)) {
-            std::cout << "File deleted successfully." << std::endl;
+            LOG(ERROR) << "File deleted successfully.";
         } else {
-            std::cerr << "Failed to delete the file." << std::endl;
+            LOG(ERROR) << "Failed to delete the file." ;
         }
-    } else {
-        std::cout << "The number of files is less than or equal to 100, no deletion will be performed." << std::endl;
-    }
+    } 
 }
