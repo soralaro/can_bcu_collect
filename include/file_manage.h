@@ -9,14 +9,14 @@
 #include <condition_variable>
 #include <thread>
 class FileManage{
-private:
-    /* data */
 public:
     FileManage(std::queue<std::vector<uint8_t>>& dataQueue,std::mutex& queueMutex,std::condition_variable& queueCondVar,
         std::atomic<bool>& shouldExit);
     ~FileManage();
     static bool createDirectoryIfNotExists(const std::string& path);
+    static std::ofstream  creatNewFile();
     void start();
+    u_int32_t getMaxFileNum();
 private:
     static void fileWriteThread(FileManage *manage);
     std::queue<std::vector<uint8_t>>& dataQueue_;
@@ -24,5 +24,8 @@ private:
     std::condition_variable& queueCondVar_;      // 条件变量
     std::atomic<bool>& shouldExit_;
     std::shared_ptr<std::thread> ptrThread_;
+    u_int32_t file_size_=0;
+    u_int32_t file_size_max_=2*1024*1024;
+    u_int32_t max_file_num_=1000;
 };
 #endif

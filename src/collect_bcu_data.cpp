@@ -50,7 +50,6 @@ void set_collect(int sock,bool flag){
     frame.data[7] = 0x00;
     if (write(sock, &frame, sizeof(struct can_frame)) != sizeof(struct can_frame)) {
         perror("Write failed");
-        return 1;
     }
 }
 std::queue<std::vector<uint8_t>> dataQueue; // 数据队列

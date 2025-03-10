@@ -6,6 +6,7 @@
 #include <cstring>    // 用于strerror
 #include <cerrno>     // 用于errno
 #include <iostream>
+#include "check_del_file.h"
 FileManage::FileManage(std::queue<std::vector<uint8_t>>& dataQueue,std::mutex& queueMutex,std::condition_variable& queueCondVar,
     std::atomic<bool>& shouldExit):dataQueue_(dataQueue),queueMutex_(queueMutex),queueCondVar_(queueCondVar),
     shouldExit_(shouldExit){
@@ -39,8 +40,7 @@ bool FileManage::createDirectoryIfNotExists(const std::string& path){
         return false;
     }
 }
-
-void FileManage::fileWriteThread(FileManage *manage){
+std::ofstream  FileManage::creatNewFile(){
     std::string folderPath = "bcu_data";
 
     if (createDirectoryIfNotExists(folderPath)) {
@@ -64,9 +64,15 @@ void FileManage::fileWriteThread(FileManage *manage){
     std::ofstream outFile(filename, std::ios::binary);
     if (!outFile) {
         std::cerr << "Error opening file." << std::endl;
-        return;
     }
-
+    return outFile; 
+}
+void FileManage::fileWriteThread(FileManage *manage){
+    auto outFile=manage->creatNewFile(); 
+    if(!outFile){
+        std::cerr << "Error  fileWriteThread opening file." << std::endl;
+    }
+    CheckDelFile checkDelFile(manage->getMaxFileNum());
     while (!manage->shouldExit_) {
         std::unique_lock<std::mutex> lock(manage->queueMutex_);
 
@@ -77,15 +83,27 @@ void FileManage::fileWriteThread(FileManage *manage){
         while (!manage->dataQueue_.empty()) {
             auto data = manage->dataQueue_.front();
             outFile.write(reinterpret_cast<char*>(data.data()), data.size());
+            manage->file_size_+=data.size();
             manage->dataQueue_.pop();
         }
-
         lock.unlock();
+        if(manage->file_size_>manage->file_size_max_){
+            outFile.close();
+            manage->file_size_=0;
+            outFile=manage->creatNewFile();
+            if(!outFile){
+                std::cerr << "Error  fileWriteThread opening file." << std::endl;
+                return;
+            }
+            checkDelFile.process();
+        }
     }
-
     outFile.close();
 }
 void FileManage::start()
 {
     ptrThread_=std::make_shared<std::thread>(FileManage::fileWriteThread,this);
+}
+u_int32_t FileManage::getMaxFileNum(){
+    return max_file_num_;
 }
