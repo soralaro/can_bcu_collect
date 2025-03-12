@@ -9,8 +9,8 @@
 #include "check_del_file.h"
 #include <glog/logging.h>
 FileManage::FileManage(std::queue<std::vector<uint8_t>>& dataQueue,std::mutex& queueMutex,std::condition_variable& queueCondVar,
-    std::atomic<bool>& shouldExit):dataQueue_(dataQueue),queueMutex_(queueMutex),queueCondVar_(queueCondVar),
-    shouldExit_(shouldExit){
+    std::atomic<bool>& shouldExit,std::atomic<bool>& shouldCreatNewFile):dataQueue_(dataQueue),queueMutex_(queueMutex),queueCondVar_(queueCondVar),
+    shouldExit_(shouldExit),shouldCreatNewFile_(shouldCreatNewFile){
 }
 
 FileManage::~FileManage(){
@@ -69,37 +69,44 @@ std::ofstream  FileManage::creatNewFile(){
     return outFile; 
 }
 void FileManage::fileWriteThread(FileManage *manage){
-    auto outFile=manage->creatNewFile(); 
-    if(!outFile){
-        LOG(ERROR) << "Error  fileWriteThread opening file.";
-    }
+    std::ofstream outFile;
     CheckDelFile checkDelFile(manage->getMaxFileNum());
     while (!manage->shouldExit_) {
-        std::unique_lock<std::mutex> lock(manage->queueMutex_);
-
         // 等待队列中有数据
+        std::unique_lock<std::mutex> lock(manage->queueMutex_);
         manage->queueCondVar_.wait(lock, [&] { return !manage->dataQueue_.empty() || manage->shouldExit_; });
-
         // 将队列中的数据写入文件
+        std::vector<uint8_t> vData;
         while (!manage->dataQueue_.empty()) {
-            auto data = manage->dataQueue_.front();
-            outFile.write(reinterpret_cast<char*>(data.data()), data.size());
-            manage->file_size_+=data.size();
+            auto packet = manage->dataQueue_.front();
+            vData.insert(vData.end(),packet.begin(),packet.end());
             manage->dataQueue_.pop();
         }
         lock.unlock();
-        if(manage->file_size_>manage->file_size_max_){
-            outFile.close();
-            manage->file_size_=0;
+        if(manage->shouldCreatNewFile_){
+            manage->shouldCreatNewFile_.store(false);
+            if(!outFile){
+                outFile.close();
+            }
+        }
+        if(!outFile){
             outFile=manage->creatNewFile();
             if(!outFile){
                 LOG(ERROR) << "Error  fileWriteThread opening file.";
                 return;
             }
+            manage->file_size_=0;
+        }
+        outFile.write(reinterpret_cast<char*>(vData.data()), vData.size());
+        manage->file_size_+=vData.size();
+        if(manage->file_size_>manage->file_size_max_){
+            outFile.close();
             checkDelFile.process();
         }
     }
-    outFile.close();
+    if(!outFile){
+        outFile.close();
+    }
 }
 void FileManage::start()
 {
