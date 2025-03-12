@@ -14,11 +14,12 @@ public:
         std::atomic<bool>& shouldExit, std::atomic<bool>& shouldCreatNewFile);
     ~FileManage();
     static bool createDirectoryIfNotExists(const std::string& path);
-    static std::ofstream  creatNewFile();
     void start();
     u_int32_t getMaxFileNum();
     void SetNoticNewFile();
 private:
+
+    std::ofstream  creatNewFile();
     static void fileWriteThread(FileManage *manage);
     std::queue<std::vector<uint8_t>>& dataQueue_;
     std::mutex& queueMutex_;                     // 队列互斥锁
@@ -27,7 +28,8 @@ private:
     std::atomic<bool>& shouldCreatNewFile_;
     std::shared_ptr<std::thread> ptrThread_;
     u_int32_t file_size_=0;
-    u_int32_t file_size_max_=2*1024*1024;
-    u_int32_t max_file_num_=1000;
+    u_int32_t file_size_max_=10*1024*1024;
+    u_int32_t max_file_num_=500;
+    std::string save_path_="./";
 };
 #endif

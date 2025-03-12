@@ -16,4 +16,4 @@ include_directories(include)
 find_package(glog REQUIRED)
 
 add_executable(${TARGET_NAME} ${SOURCES})
-target_link_libraries(${TARGET_NAME} PRIVATE glog::glog)
+target_link_libraries(${TARGET_NAME} PRIVATE glog::glog jsoncpp)

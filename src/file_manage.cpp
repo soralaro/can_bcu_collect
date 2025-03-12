@@ -8,9 +8,38 @@
 #include <iostream>
 #include "check_del_file.h"
 #include <glog/logging.h>
+#include <jsoncpp/json/json.h> // JsonCpp 头文件
 FileManage::FileManage(std::queue<std::vector<uint8_t>>& dataQueue,std::mutex& queueMutex,std::condition_variable& queueCondVar,
     std::atomic<bool>& shouldExit,std::atomic<bool>& shouldCreatNewFile):dataQueue_(dataQueue),queueMutex_(queueMutex),queueCondVar_(queueCondVar),
     shouldExit_(shouldExit),shouldCreatNewFile_(shouldCreatNewFile){
+            // 打开 JSON 文件
+    std::ifstream config_file("./config.json");
+    if (!config_file.is_open()) {
+        LOG(ERROR)<< "Failed to open config.json!";
+        return;
+    }
+
+    // 解析 JSON 文件
+    Json::Value config;
+    Json::CharReaderBuilder reader;
+    std::string errs;
+    if (!Json::parseFromStream(reader, config_file, &config, &errs)) {
+        LOG(ERROR) << "Failed to parse JSON: ";
+        return ;
+    }
+
+    // 读取配置项
+    unsigned int file_size_max = config["file_size_max"].asUInt();
+    unsigned int max_file_num = config["max_file_num"].asUInt();
+    std::string save_path = config["save_path"].asString();
+    if(file_size_max>0){
+        file_size_max_=file_size_max;
+    }
+    if(max_file_num>0){
+        max_file_num_=file_size_max;
+    }
+    LOG(ERROR)<<"file_size_max "<<file_size_max_<<",max_file_num "<<max_file_num_;
+    LOG(ERROR)<<"Save_path "<<save_path_ ;
 }
 
 FileManage::~FileManage(){
@@ -42,7 +71,7 @@ bool FileManage::createDirectoryIfNotExists(const std::string& path){
     }
 }
 std::ofstream  FileManage::creatNewFile(){
-    std::string folderPath = "bcu_data";
+    std::string folderPath = save_path_+"bcu_data";
 
     if (createDirectoryIfNotExists(folderPath)) {
         LOG(ERROR) << "Directory is ready: " << folderPath ;
