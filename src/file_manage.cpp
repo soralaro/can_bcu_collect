@@ -83,6 +83,8 @@ void FileManage::fileWriteThread(FileManage *manage){
             manage->dataQueue_.pop();
         }
         lock.unlock();
+        if(vData.size()==0)
+            continue;
         if(manage->shouldCreatNewFile_){
             manage->shouldCreatNewFile_.store(false);
             if(!outFile){
