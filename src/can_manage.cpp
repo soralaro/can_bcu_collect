@@ -103,8 +103,7 @@ void CanManage::process(CanManage *m){
             if(bcuDataHead.start_flag==FRAM_START_FLAG){
                 bcuDataHead.data_len=ntohs(bcuDataHead.data_len);
                 bcuDataHead.tick=ntohl(bcuDataHead.tick);
-    	        std::cout << "ID: " << std::hex << frame.can_id << std::endl;
-                printf("len %u,tick %u \n",bcuDataHead.data_len,bcuDataHead.tick);
+                printf("ID: %x,len %u,tick %u \n",frame.can_id,bcuDataHead.data_len,bcuDataHead.tick);
                 if(bcuDataHead.data_len>0){
                     packet_len=(bcuDataHead.data_len+7)/8*8+8;
                     packet.resize(packet_len);
