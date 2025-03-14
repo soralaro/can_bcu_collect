@@ -55,6 +55,15 @@ int CanManage::init(){
     tv.tv_sec = 3;  // 1秒超时
     tv.tv_usec = 0;
     setsockopt(s_, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+    
+    int recv_buffer_size = 10*1024 * 1024; // 设置为1MB
+ // 设置接收缓冲区大小
+    if (setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &recv_buffer_size, sizeof(recv_buffer_size))){ 
+        perror("setsockopt failed");
+        close(s_);
+        return -1;
+    }
+
     return 0;
 }
 void CanManage::set_collect(int sock,bool flag){
@@ -73,6 +82,34 @@ void CanManage::set_collect(int sock,bool flag){
         LOG(ERROR)<<"Write Can failed";
     }
 }
+void CanManage::insert_sort_frame(std::vector<struct can_frame>& frame_buffer,struct can_frame frame){
+    u_int32_t size=frame_buffer.size();
+    if(size==0){
+        frame_buffer.push_back(frame);
+    }else {
+        u_int32_t can_id=frame.can_id;
+        auto it=frame_buffer.begin();
+        for(u_int32_t i=0;i<size;i++){
+            if(it->can_id > can_id){
+                if(it->can_id-can_id >32){ 
+                    it++;
+                }else {
+                    frame_buffer.insert(it,frame);
+                    break;
+                }
+            }else {
+                if(can_id-it->can_id>32){
+                    frame_buffer.insert(it,frame);
+                    break;
+                }else{
+                    it++;
+                }
+            }
+        }
+        if(it==frame_buffer.end())
+            frame_buffer.push_back(frame);
+    }
+}
 void CanManage::process(CanManage *m){
     if(0!=m->init()){
         LOG(ERROR)<<"Fail to initialize Can socket!";
@@ -82,6 +119,10 @@ void CanManage::process(CanManage *m){
     u_int16_t packet_len=0;
     u_int16_t rcv_len=0;
     std::vector<uint8_t> packet;
+    u_int32_t can_id_save=0;
+    bool first=true;
+    u_int32_t rcv_num=0;
+    std::vector<struct can_frame> frame_buffer;
     while (!m->shouldExit_) {
         struct can_frame frame;
     	// 接收CAN帧
@@ -91,11 +132,39 @@ void CanManage::process(CanManage *m){
                 printf("Can timeout, no data available\n");
                 set_collect(m->s_,START);
                 m->shouldCreatNewFile_.store(true);
+		        rcv_num=0;
+                first=true;
+                frame_buffer.resize(0);
+		        continue;
             } else {
                 LOG(ERROR)<<"Read Can failly.";
                 return ;
             }
     	}
+			
+        u_int32_t can_id=frame.can_id;
+	    can_id=(can_id>>16)&0x00ff;
+        frame.can_id=can_id;
+        insert_sort_frame(frame_buffer,frame);
+        if(frame_buffer.size()<32){
+            continue;
+        }
+        frame=frame_buffer[0];
+        frame_buffer.erase(frame_buffer.begin());
+        can_id=frame.can_id;
+	    if(first){
+            can_id_save=can_id;
+            first=false;
+	    }else{
+		    if(can_id == 0x00){
+			    if(can_id_save!=0xff)
+				    LOG(FATAL)<<"erro can lost! can_id "<<can_id<<",can_id_save "<<can_id_save << ",rcv "<<rcv_num;
+		    }else if(can_id!=(can_id_save+1)){
+				LOG(FATAL)<<"erro can lost! can_id "<<can_id<<",can_id_save "<<can_id_save << ",rcv "<<rcv_num;
+		    }
+	    }
+	    can_id_save=can_id;
+	    rcv_num++;
         if(packet_len==0){
             BCU_DATA_HEAD bcuDataHead;
             memcpy(&bcuDataHead,frame.data,8);
@@ -110,8 +179,12 @@ void CanManage::process(CanManage *m){
                     memcpy(&packet[0],frame.data,8);
                     rcv_len=8;
                 }
-            }
+            }else {
+		//printf(" 2ID: %x\n",frame.can_id);
+	    }
         }else{
+
+		//printf(" 3ID: %x\n",frame.can_id);
             memcpy(&packet[rcv_len],frame.data,8);
             rcv_len+=8;
 
