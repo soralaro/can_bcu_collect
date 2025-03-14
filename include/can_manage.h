@@ -19,16 +19,35 @@ public:
     ~CanManage();
     static void set_collect(int sock,bool flag);
     void start();
+
 private:
     static void insert_sort_frame(std::vector<struct can_frame>& frame_buffer,struct can_frame);
     static void process(CanManage *m);
     int init();
+    std::shared_ptr<std::thread> ptrThread_;
+    int s_;
+public:
     std::queue<std::vector<uint8_t>>& dataQueue_;
     std::mutex& queueMutex_;                     // 队列互斥锁
     std::condition_variable& queueCondVar_;      // 条件变量
     std::atomic<bool>& shouldExit_;
     std::atomic<bool>& shouldCreatNewFile_;
-    std::shared_ptr<std::thread> ptrThread_;
-    int s_;
+};
+class PacketToWrite
+{
+private:
+    std::vector<struct can_frame>& frame_buffer_;
+    bool first_;
+    u_int16_t rcv_len_=0;
+    std::vector<uint8_t> packet_;
+    u_int32_t can_id_save_=0;
+    u_int32_t rcv_num_=0;
+    u_int32_t packet_len_=0;
+    /* data */
+public:
+    PacketToWrite(std::vector<struct can_frame>& frame_buffer);
+    ~PacketToWrite();
+    bool proc(CanManage *m,bool end=false);
+    void reset();
 };
 #endif

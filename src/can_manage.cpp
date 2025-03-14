@@ -110,31 +110,109 @@ void CanManage::insert_sort_frame(std::vector<struct can_frame>& frame_buffer,st
             frame_buffer.push_back(frame);
     }
 }
+
+void PacketToWrite::reset(){
+    first_=true;
+    can_id_save_=0;
+    rcv_len_=0;
+    rcv_num_=0;
+    packet_len_=0;
+    packet_.resize(0);
+}
+PacketToWrite::PacketToWrite(std::vector<struct can_frame>& frame_buffer):frame_buffer_(frame_buffer){
+    first_=true;
+    can_id_save_=0;
+    rcv_len_=0;
+    rcv_num_=0;
+    packet_len_=0;
+}
+
+PacketToWrite::~PacketToWrite(){
+}
+
+bool PacketToWrite::proc(CanManage *m,bool end){
+    auto frame=frame_buffer_[0];
+    frame_buffer_.erase(frame_buffer_.begin());
+    u_int32_t can_id=frame.can_id;
+    bool error=false;
+    if(first_){
+        can_id_save_=can_id;
+        first_=false;
+    }else{
+        if(can_id == 0x00){
+            if(can_id_save_!=0xff)
+                error=true;
+        }else if(can_id!=(can_id_save_+1)){
+            error=true;    
+        }
+    }
+    if(error){
+        if(!end){
+            LOG(FATAL)<<"erro can lost! can_id "<<can_id<<",can_id_save "<<can_id_save_ << ",rcv "<<rcv_num_;
+            return false;
+        }
+        else{
+            LOG(ERROR)<<"erro, can lost at the end! can_id "<<can_id<<",can_id_save "<<can_id_save_ << ",rcv "<<rcv_num_;
+            return false;
+        }
+    }
+    can_id_save_=can_id;
+    rcv_num_++;
+    if(packet_len_==0){
+        BCU_DATA_HEAD bcuDataHead;
+        memcpy(&bcuDataHead,frame.data,8);
+        bcuDataHead.start_flag=ntohs(bcuDataHead.start_flag);
+        if(bcuDataHead.start_flag==FRAM_START_FLAG){
+            bcuDataHead.data_len=ntohs(bcuDataHead.data_len);
+            bcuDataHead.tick=ntohl(bcuDataHead.tick);
+            printf("ID: %x,len %u,tick %u \n",frame.can_id,bcuDataHead.data_len,bcuDataHead.tick);
+            if(bcuDataHead.data_len>0){
+                packet_len_=(bcuDataHead.data_len+7)/8*8+8;
+                packet_.resize(packet_len_);
+                memcpy(&packet_[0],frame.data,8);
+                rcv_len_=8;
+            }
+        }else {
+            //printf(" 2ID: %x\n",frame.can_id);
+        }
+    }else{
+        //printf(" 3ID: %x\n",frame.can_id);
+        memcpy(&packet_[rcv_len_],frame.data,8);
+        rcv_len_+=8;
+
+        if(rcv_len_>=packet_len_){
+            {
+                std::lock_guard<std::mutex> lock(m->queueMutex_);
+                m->dataQueue_.push(packet_);
+            }
+            m->queueCondVar_.notify_one();
+            rcv_len_=0;
+            packet_len_=0;
+        }
+    }
+    return true;
+}
 void CanManage::process(CanManage *m){
     if(0!=m->init()){
         LOG(ERROR)<<"Fail to initialize Can socket!";
         return;
     }
     set_collect(m->s_,START);
-    u_int16_t packet_len=0;
-    u_int16_t rcv_len=0;
-    std::vector<uint8_t> packet;
-    u_int32_t can_id_save=0;
-    bool first=true;
-    u_int32_t rcv_num=0;
     std::vector<struct can_frame> frame_buffer;
+    std::shared_ptr<PacketToWrite>  packetToWrite=std::make_shared<PacketToWrite>(frame_buffer);
     while (!m->shouldExit_) {
         struct can_frame frame;
     	// 接收CAN帧
         if (read(m->s_, &frame, sizeof(struct can_frame)) < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                while(frame_buffer.size()>0){
+                    if(!packetToWrite->proc(m,true))
+                        frame_buffer.resize(0);
+                }
                 // 超时，没有数据可读
                 printf("Can timeout, no data available\n");
-                set_collect(m->s_,START);
                 m->shouldCreatNewFile_.store(true);
-		        rcv_num=0;
-                first=true;
-                frame_buffer.resize(0);
+                packetToWrite.reset();
 		        continue;
             } else {
                 LOG(ERROR)<<"Read Can failly.";
@@ -149,55 +227,7 @@ void CanManage::process(CanManage *m){
         if(frame_buffer.size()<32){
             continue;
         }
-        frame=frame_buffer[0];
-        frame_buffer.erase(frame_buffer.begin());
-        can_id=frame.can_id;
-	    if(first){
-            can_id_save=can_id;
-            first=false;
-	    }else{
-		    if(can_id == 0x00){
-			    if(can_id_save!=0xff)
-				    LOG(FATAL)<<"erro can lost! can_id "<<can_id<<",can_id_save "<<can_id_save << ",rcv "<<rcv_num;
-		    }else if(can_id!=(can_id_save+1)){
-				LOG(FATAL)<<"erro can lost! can_id "<<can_id<<",can_id_save "<<can_id_save << ",rcv "<<rcv_num;
-		    }
-	    }
-	    can_id_save=can_id;
-	    rcv_num++;
-        if(packet_len==0){
-            BCU_DATA_HEAD bcuDataHead;
-            memcpy(&bcuDataHead,frame.data,8);
-            bcuDataHead.start_flag=ntohs(bcuDataHead.start_flag);
-            if(bcuDataHead.start_flag==FRAM_START_FLAG){
-                bcuDataHead.data_len=ntohs(bcuDataHead.data_len);
-                bcuDataHead.tick=ntohl(bcuDataHead.tick);
-                printf("ID: %x,len %u,tick %u \n",frame.can_id,bcuDataHead.data_len,bcuDataHead.tick);
-                if(bcuDataHead.data_len>0){
-                    packet_len=(bcuDataHead.data_len+7)/8*8+8;
-                    packet.resize(packet_len);
-                    memcpy(&packet[0],frame.data,8);
-                    rcv_len=8;
-                }
-            }else {
-		//printf(" 2ID: %x\n",frame.can_id);
-	    }
-        }else{
-
-		//printf(" 3ID: %x\n",frame.can_id);
-            memcpy(&packet[rcv_len],frame.data,8);
-            rcv_len+=8;
-
-            if(rcv_len>=packet_len){
-                {
-                    std::lock_guard<std::mutex> lock(m->queueMutex_);
-                    m->dataQueue_.push(packet);
-                }
-                m->queueCondVar_.notify_one();
-                rcv_len=0;
-                packet_len=0;
-            }
-        }
+        packetToWrite->proc(m);
     }
     set_collect(m->s_,STOP);
     // 关闭Socket
