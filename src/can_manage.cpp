@@ -165,7 +165,7 @@ bool PacketToWrite::proc(CanManage *m,bool end){
         if(bcuDataHead.start_flag==FRAM_START_FLAG){
             bcuDataHead.data_len=ntohs(bcuDataHead.data_len);
             bcuDataHead.tick=ntohl(bcuDataHead.tick);
-            printf("ID: %x,len %u,tick %u \n",frame.can_id,bcuDataHead.data_len,bcuDataHead.tick);
+            printf("num %u,ID: %x,len %u,tick %u \n",rcv_num_,frame.can_id,bcuDataHead.data_len,bcuDataHead.tick);
             if(bcuDataHead.data_len>0){
                 packet_len_=(bcuDataHead.data_len+7)/8*8+8;
                 packet_.resize(packet_len_);
