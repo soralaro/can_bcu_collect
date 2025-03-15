@@ -10,8 +10,8 @@
 #include <glog/logging.h>
 #include <jsoncpp/json/json.h> // JsonCpp 头文件
 FileManage::FileManage(std::queue<std::vector<uint8_t>>& dataQueue,std::mutex& queueMutex,std::condition_variable& queueCondVar,
-    std::atomic<bool>& shouldExit,std::atomic<bool>& shouldCreatNewFile):dataQueue_(dataQueue),queueMutex_(queueMutex),queueCondVar_(queueCondVar),
-    shouldExit_(shouldExit),shouldCreatNewFile_(shouldCreatNewFile){
+    std::atomic<bool>& shouldExit,std::atomic<bool>& shouldCloseFile):dataQueue_(dataQueue),queueMutex_(queueMutex),queueCondVar_(queueCondVar),
+    shouldExit_(shouldExit),shouldCloseFile_(shouldCloseFile){
             // 打开 JSON 文件
     std::ifstream config_file("./config.json");
     if (!config_file.is_open()) {
@@ -89,11 +89,13 @@ std::ofstream  FileManage::creatNewFile(){
     // 使用stringstream格式化时间
     std::stringstream ss;
     ss << std::put_time(&now_tm, "%Y-%m-%d_%H:%M:%S");
-    std::string filename=folderPath+"/bcu_data_";
-    filename+=ss.str()+".bin";
-    std::ofstream outFile(filename, std::ios::binary);
+    current_file_name_=folderPath+"/bcu_data_";
+    current_file_name_+=ss.str()+".bin";
+    std::ofstream outFile(current_file_name_, std::ios::binary);
     if (!outFile) {
-        LOG(ERROR)<< "Error opening file.";
+        LOG(ERROR)<< "Error opening file "<<current_file_name_;
+    }else{
+        LOG(ERROR)<< " opening file "<<current_file_name_;
     }
     return outFile; 
 }
@@ -103,7 +105,7 @@ void FileManage::fileWriteThread(FileManage *manage){
     while (!manage->shouldExit_) {
         // 等待队列中有数据
         std::unique_lock<std::mutex> lock(manage->queueMutex_);
-        manage->queueCondVar_.wait(lock, [&] { return !manage->dataQueue_.empty() || manage->shouldExit_; });
+        manage->queueCondVar_.wait(lock, [&] { return !manage->dataQueue_.empty() || manage->shouldExit_|| manage->shouldCloseFile_;});
         // 将队列中的数据写入文件
         std::vector<uint8_t> vData;
         while (!manage->dataQueue_.empty()) {
@@ -112,17 +114,18 @@ void FileManage::fileWriteThread(FileManage *manage){
             manage->dataQueue_.pop();
         }
         lock.unlock();
-        if(vData.size()==0)
-            continue;
-        if(manage->shouldCreatNewFile_){
-            manage->shouldCreatNewFile_.store(false);
-            if(!outFile){
+        if(manage->shouldCloseFile_){
+            manage->shouldCloseFile_.store(false);
+            if(outFile.is_open()){
                 outFile.close();
+                LOG(ERROR)<<"close file "<<manage->current_file_name_;
             }
         }
-        if(!outFile){
+        if(vData.size()==0)
+            continue;
+        if(!outFile.is_open()){
             outFile=manage->creatNewFile();
-            if(!outFile){
+            if(!outFile.is_open()){
                 LOG(ERROR) << "Error  fileWriteThread opening file.";
                 return;
             }
@@ -132,11 +135,13 @@ void FileManage::fileWriteThread(FileManage *manage){
         manage->file_size_+=vData.size();
         if(manage->file_size_>manage->file_size_max_){
             outFile.close();
+            LOG(ERROR)<<"close file "<<manage->current_file_name_;
             checkDelFile.process();
         }
     }
-    if(!outFile){
+    if(outFile.is_open()){
         outFile.close();
+        LOG(ERROR)<<"close file "<<manage->current_file_name_;
     }
 }
 void FileManage::start()

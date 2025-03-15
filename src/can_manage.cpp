@@ -25,8 +25,8 @@ typedef struct
    u_int32_t tick;
 }BCU_DATA_HEAD;
 CanManage::CanManage(std::queue<std::vector<uint8_t>>& dataQueue,std::mutex& queueMutex,std::condition_variable& queueCondVar,
-    std::atomic<bool>& shouldExit, std::atomic<bool>& shouldCreatNewFile):dataQueue_(dataQueue),queueMutex_(queueMutex),
-    queueCondVar_(queueCondVar), shouldExit_(shouldExit),shouldCreatNewFile_(shouldCreatNewFile){
+    std::atomic<bool>& shouldExit, std::atomic<bool>& shouldCloseFile):dataQueue_(dataQueue),queueMutex_(queueMutex),
+    queueCondVar_(queueCondVar), shouldExit_(shouldExit),shouldCloseFile_(shouldCloseFile){
 }
 
 CanManage::~CanManage(){
@@ -200,26 +200,34 @@ void CanManage::process(CanManage *m){
     set_collect(m->s_,START);
     std::vector<struct can_frame> frame_buffer;
     std::shared_ptr<PacketToWrite>  packetToWrite=std::make_shared<PacketToWrite>(frame_buffer);
+    u_int32_t time_out_times=0;
     while (!m->shouldExit_) {
         struct can_frame frame;
     	// 接收CAN帧
         if (read(m->s_, &frame, sizeof(struct can_frame)) < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                while(frame_buffer.size()>0){
-                    if(!packetToWrite->proc(m,true))
-                        frame_buffer.resize(0);
+                if(time_out_times==0){
+                    while(frame_buffer.size()>0){
+                        if(!packetToWrite->proc(m,true))
+                            frame_buffer.resize(0);
+                    }
+                    packetToWrite->reset();
+                }
+                if(time_out_times==1){
+                    m->shouldCloseFile_.store(true);
+                    m->queueCondVar_.notify_one();
                 }
                 // 超时，没有数据可读
-                printf("Can timeout, no data available\n");
-                m->shouldCreatNewFile_.store(true);
-                packetToWrite.reset();
+                printf("Can timeout %u s, no data available\n",time_out_times*3);
+                time_out_times ++;
+                set_collect(m->s_,START);
 		        continue;
             } else {
-                LOG(ERROR)<<"Read Can failly.";
+                LOG(FATAL)<<"Read Can failly.";
                 return ;
             }
     	}
-			
+		time_out_times=0;	
         u_int32_t can_id=frame.can_id;
 	    can_id=(can_id>>16)&0x00ff;
         frame.can_id=can_id;

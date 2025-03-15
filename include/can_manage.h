@@ -15,7 +15,7 @@
 class CanManage{
 public:
     CanManage(std::queue<std::vector<uint8_t>>& dataQueue,std::mutex& queueMutex,std::condition_variable& queueCondVar,
-        std::atomic<bool>& shouldExit,std::atomic<bool>& shouldCreatNewFile);
+        std::atomic<bool>& shouldExit,std::atomic<bool>& shouldCloseFile);
     ~CanManage();
     static void set_collect(int sock,bool flag);
     void start();
@@ -31,7 +31,7 @@ public:
     std::mutex& queueMutex_;                     // 队列互斥锁
     std::condition_variable& queueCondVar_;      // 条件变量
     std::atomic<bool>& shouldExit_;
-    std::atomic<bool>& shouldCreatNewFile_;
+    std::atomic<bool>& shouldCloseFile_;
 };
 class PacketToWrite
 {

@@ -19,7 +19,7 @@
 
 // 全局标志，用于指示程序是否应该退出
 std::atomic<bool> shouldExit(false);
-std::atomic<bool> shouldCreatNewFile(false);
+std::atomic<bool> shouldCloseFile(false);
 std::queue<std::vector<uint8_t>> dataQueue; // 数据队列
 std::mutex queueMutex;                     // 队列互斥锁
 std::condition_variable queueCondVar;      // 条件变量
@@ -38,8 +38,8 @@ void inputListener() {
 }
 
 int main() {
-    std::shared_ptr<FileManage> ptrFileManage=std::make_shared<FileManage>(dataQueue,queueMutex,queueCondVar,shouldExit,shouldCreatNewFile);
-    std::shared_ptr<CanManage> ptrCanManage=std::make_shared<CanManage>(dataQueue,queueMutex,queueCondVar,shouldExit,shouldCreatNewFile);
+    std::shared_ptr<FileManage> ptrFileManage=std::make_shared<FileManage>(dataQueue,queueMutex,queueCondVar,shouldExit,shouldCloseFile);
+    std::shared_ptr<CanManage> ptrCanManage=std::make_shared<CanManage>(dataQueue,queueMutex,queueCondVar,shouldExit,shouldCloseFile);
     ptrCanManage->start();
     ptrFileManage->start();
      // 启动输入监听线程
